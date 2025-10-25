@@ -5,6 +5,9 @@
 
 ##比thinkphp官方提供的简单好用。
 
+#### 感兴趣的也可以看看我的框架，也是支持workerman启动的：
+#### https://github.com/xuey490/project
+
 ##特性：
 #####⚠️ 无需 Nginx / Apache
 #####🚀 使用 Workerman 管理进程，ThinkPHP 应用内核常驻内存，性能显著提升。
