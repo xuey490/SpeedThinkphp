@@ -15,7 +15,7 @@ require __DIR__ . '/vendor/autoload.php';
 // ----------------------------
 // 定义 ThinkPHP 应用路径
 // ----------------------------
-define('APP_PATH', __DIR__ . '/app');
+#define('APP_PATH', __DIR__ . '/app');
 define('PUBLIC_PATH', __DIR__ . '/public');
 define('ROOT_PATH', __DIR__);
 
@@ -34,6 +34,8 @@ $worker->watchDirs = [__DIR__ . '/app', __DIR__ . '/config', __DIR__ . '/public'
 // 日志
 $logFile = __DIR__ . '/runtime/workerman_access.log';
 
+// ThinkPHP 入口文件路径
+define('APP_PATH', __DIR__ . '/public/index.php');
 
 // ----------------------------
 // Worker 启动时加载核心
@@ -49,7 +51,7 @@ $worker->onWorkerStart = function($worker)  {
     }
 	
     // 内存占用检测
-    Timer::add(10, function () use ($worker) {
+    Timer::add(60, function () use ($worker) {
         $usage = memory_get_usage(true);
 		Worker::log("[MEM] use ".round($usage / 1024 / 1024, 2)." MB");
         if ($usage > $worker->memoryLimit) {
@@ -82,29 +84,54 @@ $worker->onMessage = function($connection, Request $request) use($worker, $logFi
         $_FILES   = $request->file() ?? [];
         $_REQUEST = array_merge($_GET, $_POST);
 
-        $http = (new App())->http;
-        $response = $http->run();
-        $content  = $response->getContent();
-        $status   = $response->getCode();
-        $headers  = $response->getHeader();
 
-		// gzip 压缩
-		if (strpos($_SERVER['HTTP_ACCEPT_ENCODING'] ?? '', 'gzip') !== false && strlen($response) > 1024) {
-			$response = gzencode($response, $worker->gzipLevel);
-			echo 'aa';
-			$connection->send("HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\n\r\n" . $response);
-			
-		} else {
-			$connection->send(new Response($status, $headers, $content));
-		}
+        $http = (new App())->http;
+        $thinkResponse = $http->run();
+        
+        // 强制获取响应内容
+        $content = extractResponseContent($thinkResponse);
+        $status = $thinkResponse->getCode();
+        $headers = $thinkResponse->getHeader();
+        
+        // 移除可能冲突的 Content-Length 头
+        unset($headers['Content-Length']);
+        
+        // 创建 Workerman Response
+		#print_r($content);
+        $response = new Response($status, $headers, $content);
+        
+        $connection->send($response);
+
+		
 		$http->end($response);	
-		 file_put_contents($logFile, sprintf("[%s] %s %s %.2fms\n", date('Y-m-d H:i:s'), $_SERVER['REQUEST_METHOD'], $uri, $elapsed), FILE_APPEND);
-    } catch (Throwable $e) {
+		file_put_contents($logFile, sprintf("[%s] %s %s %.2fms\n", date('Y-m-d H:i:s'), $_SERVER['REQUEST_METHOD'], $uri, $elapsed), FILE_APPEND);
+    } catch (\Throwable $e) {
+		#print_r($e);
         $connection->send(new Response(500, ['Content-Type' => 'text/plain'], 
             "Internal Server Error:\n" . $e->getMessage()
         ));
     }
 };
+
+// ----------------------------
+// 提取响应内容的辅助函数
+// ----------------------------
+function extractResponseContent($response) {
+    // 方法1: 如果响应对象有 getContent 方法
+    if (method_exists($response, 'getContent')) {
+        $content = $response->getContent();
+        if (is_string($content)) {
+            return $content;
+        }
+    }
+    
+    // 方法2: 使用输出缓冲捕获
+    ob_start();
+    $content = $response->send();
+    ob_get_clean();
+    
+    return $content;
+}
 
 // ----------------------------
 // 构造 $_SERVER 环境
