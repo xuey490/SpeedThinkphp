@@ -32,7 +32,7 @@ $worker->memoryLimit = 256 * 1024 * 1024; // 256MB
 $worker->watchDirs = [__DIR__ . '/app', __DIR__ . '/config', __DIR__ . '/public'];//监控目录
 
 // 日志
-$logFile = __DIR__ . '/runtime/workerman_access.log';
+$logFile = __DIR__ . '/runtime/run.log';
 
 // ThinkPHP 入口文件路径
 define('APP_PATH', __DIR__ . '/public/index.php');
@@ -51,7 +51,7 @@ $worker->onWorkerStart = function($worker)  {
     }
 	
     // 内存占用检测
-    Timer::add(60, function () use ($worker) {
+    Timer::add(10, function () use ($worker) {
         $usage = memory_get_usage(true);
 		Worker::log("[MEM] use ".round($usage / 1024 / 1024, 2)." MB");
         if ($usage > $worker->memoryLimit) {
@@ -102,9 +102,13 @@ $worker->onMessage = function($connection, Request $request) use($worker, $logFi
         
         $connection->send($response);
 
-		
+        // 记录日志
+        $elapsed = round((microtime(true) - $startTime) * 1000, 2);
+        file_put_contents($logFile, sprintf("[%s] %s %s %.2fms\n", 
+            date('Y-m-d H:i:s'), $_SERVER['REQUEST_METHOD'], $uri, $elapsed), FILE_APPEND);
+
 		$http->end($response);	
-		file_put_contents($logFile, sprintf("[%s] %s %s %.2fms\n", date('Y-m-d H:i:s'), $_SERVER['REQUEST_METHOD'], $uri, $elapsed), FILE_APPEND);
+		
     } catch (\Throwable $e) {
 		#print_r($e);
         $connection->send(new Response(500, ['Content-Type' => 'text/plain'], 
