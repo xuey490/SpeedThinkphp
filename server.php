@@ -45,7 +45,7 @@ $worker->onWorkerStart = function($worker)  {
 
     // 热更新监控（仅开发模式）
     if (in_array('--debug', $_SERVER['argv'])) {
-        echo "[HotReload] Watching for PHP file changes...\n";
+        Worker::log( "[HotReload] Watching for PHP file changes...\n");
         $dirs = $worker->watchDirs;
         watch_files_and_reload($dirs, $worker);
     }
@@ -55,7 +55,7 @@ $worker->onWorkerStart = function($worker)  {
         $usage = memory_get_usage(true);
 		Worker::log("[MEM] use ".round($usage / 1024 / 1024, 2)." MB");
         if ($usage > $worker->memoryLimit) {
-            echo "⚠️ Memory limit exceeded (" . round($usage / 1024 / 1024, 2) . "MB), restarting...\n";
+            Worker::log( "⚠️ Memory limit exceeded (" . round($usage / 1024 / 1024, 2) . "MB), restarting...\n");
             Worker::stopAll();
         }
     });	
@@ -69,6 +69,12 @@ $worker->onMessage = function($connection, Request $request) use($worker, $logFi
     try {
 		$startTime = microtime(true);
         $uri = urldecode($request->path());
+		
+		if($uri ==='/') {
+			$connection->send(new Response(302, ['Location' => '/home'], ''));
+			return; // 终止后续逻辑执行			
+		}
+		
         $file = PUBLIC_PATH . $uri;
 
         // ① 如果请求静态文件
